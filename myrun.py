@@ -5,6 +5,7 @@ import torch.nn.functional as func
 from sklearn.datasets import make_classification
 from matplotlib import pyplot as plt
 from torch.utils.tensorboard import SummaryWriter
+import shutil
 
 def abline(slope, intercept):
     """Plot a line from slope and intercept"""
@@ -21,18 +22,22 @@ class Simple(torch.nn.Module):
     def forward(self, x):
         return torch.sigmoid(self.linear(x))
 
+# shutil.rmtree('./runs')
 torch.manual_seed(1)
 np.random.seed(0)
 size = 200
 labeled_size = 50
 unlabeled_size = 150
-x, y = make_classification(n_samples=size, n_features=2, n_redundant=0, n_informative=2, n_clusters_per_class=1, class_sep=10, flip_y=0)
+x, y = make_classification(n_samples=size, n_features=2, n_redundant=0, n_informative=2, n_clusters_per_class=1, class_sep=2, flip_y=0)
 x_labeled = x[:labeled_size]
 y_labeled = y[:labeled_size]
 x_unlabeled = x[labeled_size:]
 y_unlabeled = y[labeled_size:]
 
 plt.scatter(x_labeled[:, 0], x_labeled[:, 1], marker='o', c=y_labeled, s=25, edgecolor='k')
+
+plt.scatter(x_unlabeled[:, 0], x_unlabeled[:, 1], marker='o', c=y_unlabeled, s=25, edgecolor='r')
+
 x_labeled = torch.from_numpy(x_labeled).float()
 y_labeled = torch.from_numpy(y_labeled).reshape(-1, 1).float()
 x_unlabeled = torch.from_numpy(x_unlabeled).float()
@@ -42,14 +47,16 @@ net = Simple()
 loss = torch.nn.BCELoss(reduction = 'sum')
 optimizer = torch.optim.SGD(net.parameters(), lr = 0.1)
 writer = SummaryWriter('runs/fashion_mnist_experiment_1')
-
+sum = 0
 for i in range(5000):
     optimizer.zero_grad()
     l = loss(net(x_labeled[i%labeled_size]), y_labeled[i%labeled_size])
     l.backward()
     optimizer.step()
-    writer.add_scalar('training loss', l.item(), i)
-writer.close()
+    sum += l.item()
+    if i%100 == 0:
+        writer.add_scalar('training loss', sum/100, i)
+        sum = 0
 
 # print (y)
 # print (net(x))
@@ -67,12 +74,12 @@ alpha = 0.1
 adv_x_labeled  = x_labeled + alpha*x_labeled.grad.sign()
 
 plt.scatter(adv_x_labeled[:, 0].detach().numpy(), adv_x_labeled[:, 1].detach().numpy(), marker='o', c=y_labeled.reshape(-1).detach().numpy(), s=25, edgecolor='g')
-# plt.show()
+
 eta_unlabeled = net(x_unlabeled)
 # print(net(x_unlabeled))
 # print(loss(net(x_unlabeled), y_unlabeled))
 
-K = 2
+K = 1
 class Simple1(torch.nn.Module):
     def __init__(self):
         super(Simple1, self).__init__()
@@ -109,8 +116,9 @@ class CumstomLoss(torch.nn.Module):
 
 loss = CumstomLoss()
 optim = torch.optim.SGD(net1.parameters(), lr = 0.1)
-for i in range(5):
-    x_unlabeled_i = x_unlabeled[i]
+sum = 0
+for i in range(5000):
+    x_unlabeled_i = x_unlabeled[i%unlabeled_size]
     x_unlabeled_i.requires_grad = True
 
     net1.zero_grad()
@@ -137,7 +145,22 @@ for i in range(5):
 
     optim.zero_grad()
 #     loss = eta_unlabeled[i]*net1(adv_x_unlabeled1, 1) + (1-eta_unlabeled[i])*net1(adv_x_unlabeled2, -1)
-    l = loss(eta_unlabeled[i], net1(adv_x_unlabeled1, 1), net1(adv_x_unlabeled2, -1))
+    l = loss(eta_unlabeled[i%unlabeled_size], net1(adv_x_unlabeled1, 1), net1(adv_x_unlabeled2, -1))
+    if l > 0.1:
+        print(i, eta_unlabeled[i%unlabeled_size], net1(adv_x_unlabeled1, 1), net1(adv_x_unlabeled2, -1), l)
     l.backward(retain_graph=True)
     optim.step()
+    sum += l.item()
+    if i%100 == 0:
+        writer.add_scalar('training_adv loss', sum/100, i)
+        sum = 0
+#     writer.add_scalar('training_adv loss', l.item(), i)
 
+w0, w1, b = net.linear.weight.detach().numpy()[0][0], net.linear.weight.detach().numpy()[0][1], net.linear.bias.detach().numpy()[0]
+w0_, w1_, b_ = net1.linear.weight.detach().numpy()[0][0], net1.linear.weight.detach().numpy()[0][1], net1.linear.bias.detach().numpy()[0]
+print(w0, w1, b)
+print(w0_, w1_, b_)
+abline(-w0_/w1_, -b_/w1_)
+
+plt.show()
+writer.close()
