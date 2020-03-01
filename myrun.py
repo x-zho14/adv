@@ -100,6 +100,14 @@ net1 = Simple1()
 
 # plt.show()
 
+class CumstomLoss(torch.nn.Module):
+    def __init__(self):
+        super(CumstomLoss,self).__init__()
+
+    def forward(self, eta, phi1, phi2):
+        return eta*phi1 + (1-eta)*phi2
+
+loss = CumstomLoss()
 optim = torch.optim.SGD(net1.parameters(), lr = 0.1)
 for i in range(5):
     x_unlabeled_i = x_unlabeled[i]
@@ -111,19 +119,25 @@ for i in range(5):
 #     print(x_unlabeled_i)
 #     print(x_unlabeled_i.grad)
 #     print(adv_x_unlabeled1)
+#     print(net1(x_unlabeled_i, 1))
+#     print(net1(adv_x_unlabeled1, 1))
     net1.zero_grad()
     x_unlabeled_i.grad.zero_()
+
     net1(x_unlabeled_i, -1).backward()
+#     print(x_unlabeled_i.grad)
+
+
     adv_x_unlabeled2 = x_unlabeled_i + alpha*x_unlabeled_i.grad.sign()
 #     print(x_unlabeled_i)
 #     print(x_unlabeled_i.grad)
 #     print(adv_x_unlabeled2)
+#     print(net1(x_unlabeled_i, 1))
+#     print(net1(adv_x_unlabeled2, 1))
 
     optim.zero_grad()
-    phi_1 = net1(adv_x_unlabeled1, 1)
-    phi_2 = net1(adv_x_unlabeled2, -1)
 #     loss = eta_unlabeled[i]*net1(adv_x_unlabeled1, 1) + (1-eta_unlabeled[i])*net1(adv_x_unlabeled2, -1)
-    loss = eta_unlabeled[i]*phi_1 + (1-eta_unlabeled[i])*phi_2
-    loss.backward(retain_graph=True)
+    l = loss(eta_unlabeled[i], net1(adv_x_unlabeled1, 1), net1(adv_x_unlabeled2, -1))
+    l.backward(retain_graph=True)
     optim.step()
 
